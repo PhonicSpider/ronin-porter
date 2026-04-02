@@ -5,6 +5,19 @@
 # An easy port opener/closer for admins of game servers or any application that requires specific ports to be open.
 # =========================================
 
+<#
+    Copyright (C) 2026 PhonicSpider
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU Affero General Public License for more details.
+#>
 
 # PortOpener.ps1 - A simple PowerShell script to manage Windows Firewall rules for specific ports.
 # This script can be used to open or close ports for applications like game servers, remote desktop, etc.
