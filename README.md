@@ -63,3 +63,10 @@ The script outputs standardized logs that can be parsed by external applications
 ---
 
 > **Note:** This tool was developed for use with the RSM Project and community game server hosting. Use responsibly and only open ports that are strictly necessary for your application.
+
+---
+
+## ⚖️ License
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. 
+This ensures the software remains free and open-source, and any derivative works 
+must also be shared under the same protective terms.
