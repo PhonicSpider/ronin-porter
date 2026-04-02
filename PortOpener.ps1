@@ -20,94 +20,78 @@
 # ==========================================
 # CONFIGURATION SECTION
 # ==========================================
-$Mode           = "Update"               # "Update" or "RemoveOnly"
-$DebugMode      = $true                  # Set to $true to see detailed errors/verbose logs
-$RuleName       = "Space Engineers Test" # Base name for firewall rules, will be suffixed with protocol (TCP/UDP)
-$Ports          = "27016, 29016"         # Comma-separated list of ports to open/close, will be done on both TCP and UDP
-$Protocols      = @("TCP", "UDP")        # Protocols to apply rules to, can be "TCP", "UDP", or both
-$Action         = "Allow"                # "Allow" to open ports, "Block" to close ports if not using the "Mode" parameter"
-$Profile        = "Any"                  # "Domain", "Private", "Public", or "Any" - which network profiles the rule applies to
+$Mode           = "Update"               # Options: "Update" or "RemoveOnly"
+$DebugMode      = $true                  # Set to $true for detailed error logs
+$RuleName       = "Space Engineers Test" 
+$Ports          = "27016, 29016"         # Can be "80", "80, 443", or "27000-27050"
+$Protocols      = @("TCP", "UDP")        
+$Action         = "Allow"                
+$Profile        = "Any"                  
 # ==========================================
 
-# --- Logging Helper Function ---
-
-# A helper function to write colored log messages with timestamps and levels (Info, Warning, Error, Debug).
+# --- Logging & UI Helper ---
 function Write-Log {
-    param (
-        [Parameter(Mandatory=$true)][string]$Message,
-        [ValidateSet("Info", "Warning", "Error", "Debug")][string]$Level = "Info"
-    )
-
-    $Color = switch ($Level) {
-        "Info"    { "Cyan" }
-        "Warning" { "Yellow" }
-        "Error"   { "Red" }
-        "Debug"   { "Gray" }
-        Default   { "White" }
-    }
-
+    param ([string]$Message, [ValidateSet("Info", "Warning", "Error", "Debug")]$Level = "Info")
+    $Color = switch ($Level) { "Info" {"Cyan"}; "Warning" {"Yellow"}; "Error" {"Red"}; "Debug" {"Gray"}; Default {"White"} }
     if ($Level -eq "Debug" -and -not $DebugMode) { return }
-
-    $Timestamp = Get-Date -Format "HH:mm:ss"
-    Write-Host "[$Timestamp] [$($Level.ToUpper())] $Message" -ForegroundColor $Color
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] [$($Level.ToUpper())] $Message" -ForegroundColor $Color
 }
 
-# --- 1. Admin Elevation Check ---
+# --- 1. Admin Elevation ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Log "Requesting Administrative privileges..." -Level "Warning"
-    try {
-        Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs -ErrorAction Stop
-        exit
-    } catch {
-        Write-Log "Failed to elevate to Admin. Firewall rules cannot be modified." -Level "Error"
-        if ($DebugMode) { Write-Log $_.Exception.Message -Level "Debug" }
-        pause; exit
-    }
+    Write-Log "Elevating to Administrator..." -Level "Warning"
+    try { Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs -ErrorAction Stop; exit } 
+    catch { Write-Log "Elevation failed. Right-click and 'Run as Administrator'." -Level "Error"; pause; exit }
 }
 
-# --- 2. Cleanup Logic ---
+# --- 2. Input Validation (Pre-Flight) ---
+Write-Log "Validating configuration..." -Level "Debug"
+$CleanPorts = $Ports -replace '\s+', '' # Remove all whitespace for the API
+if ($CleanPorts -match '[^0-9,-]') {
+    Write-Log "Invalid characters found in Ports: '$Ports'. Only numbers, commas, and hyphens allowed." -Level "Error"
+    pause; exit
+}
+
+# --- 3. Cleanup ---
 Write-Log "Starting cleanup for '$RuleName'..."
 try {
-    $ExistingRules = Get-NetFirewallRule -DisplayName "$RuleName*" -ErrorAction Stop
-    if ($ExistingRules) {
-        $ExistingRules | Remove-NetFirewallRule -ErrorAction Stop
-        Write-Log "Successfully removed existing rules." -Level "Warning"
-    } else {
-        Write-Log "No matching rules found to remove." -Level "Debug"
+    $Existing = Get-NetFirewallRule -DisplayName "$RuleName*" -ErrorAction SilentlyContinue
+    if ($Existing) {
+        $Existing | Remove-NetFirewallRule -ErrorAction Stop
+        Write-Log "Cleaned $(@($Existing).Count) existing rules." -Level "Warning"
     }
 } catch {
-    Write-Log "An error occurred during cleanup check." -Level "Debug"
-    Write-Log $_.Exception.Message -Level "Debug"
+    Write-Log "Cleanup failed: $($_.Exception.Message)" -Level "Error"
 }
 
-if ($Mode -eq "RemoveOnly") {
-    Write-Log "Operation 'RemoveOnly' complete. Exiting." -Level "Info"
-    return
+if ($Mode -eq "RemoveOnly") { 
+    Write-Log "Mode set to RemoveOnly. Ports are now closed." -Level "Info"
+    pause; return 
 }
 
-# --- 3. Rule Creation ---
+# --- 4. Rule Creation ---
+$SuccessCount = 0
 foreach ($Proto in $Protocols) {
-    $FullDisplayName = "$RuleName ($Proto)"
-    Write-Log "Attempting to create: $FullDisplayName..." -Level "Debug"
-    
     try {
-        $Params = @{
-            DisplayName  = $FullDisplayName
-            Direction    = "Inbound"
-            Action       = $Action
-            Protocol     = $Proto
-            LocalPort    = $Ports
-            Profile      = $Profile
-            Enabled      = "True"
-            ErrorAction  = "Stop" # Forces the 'try/catch' to trigger on failure
-        }
-
-        New-NetFirewallRule @Params | Out-Null
-        Write-Log "Created: $FullDisplayName" -Level "Info"
+        $Name = "$RuleName ($Proto)"
+        New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action $Action -Protocol $Proto -LocalPort $CleanPorts -Profile $Profile -Enabled True -ErrorAction Stop | Out-Null
+        Write-Log "Created: $Name" -Level "Info"
+        $SuccessCount++
     } catch {
-        Write-Log "Failed to create rule: $FullDisplayName" -Level "Error"
-        Write-Log "Technical Details: $($_.Exception.Message)" -Level "Debug"
+        Write-Log "Failed to create $Proto rule: $($_.Exception.Message)" -Level "Error"
     }
 }
 
-Write-Log "Firewall update complete." -Level "Info"
+# --- 5. Final Summary ---
+Write-Host "`n-------------------------------------------" -ForegroundColor Gray
+if ($SuccessCount -eq $Protocols.Count) {
+    Write-Host " STATUS: SUCCESS" -ForegroundColor Green
+    Write-Host " All ports ($Ports) are now OPEN." -ForegroundColor White
+} else {
+    Write-Host " STATUS: COMPLETED WITH ERRORS" -ForegroundColor Yellow
+    Write-Host " Check debug logs above for details." -ForegroundColor White
+}
+Write-Host "-------------------------------------------`n" -ForegroundColor Gray
+
+# Only pause if we are in DebugMode or if there's a potential we were run by double-clicking
+if ($DebugMode) { Write-Log "Press any key to close this window..." -Level "Debug"; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") }
