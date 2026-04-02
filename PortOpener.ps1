@@ -20,44 +20,94 @@
 # ==========================================
 # CONFIGURATION SECTION
 # ==========================================
-# Options: "Update" (Refresh rules) or "RemoveOnly" (Delete and stop)
-$Mode           = "Update"               
-
-$RuleName       = "Valheim Server"       # The base name for the rules
-$Ports          = "2456, 2457, 2458"     # Single, list, or range
-$Protocols      = @("TCP", "UDP")        # Protocols to apply
-$Action         = "Allow"                # "Allow" or "Block"
-$Profile        = "Any"                  # "Any", "Domain", "Private", or "Public"
+$Mode           = "Update"               # "Update" or "RemoveOnly"
+$DebugMode      = $true                  # Set to $true to see detailed errors/verbose logs
+$RuleName       = "Space Engineers Test" # Base name for firewall rules, will be suffixed with protocol (TCP/UDP)
+$Ports          = "27016, 29016"         # Comma-separated list of ports to open/close, will be done on both TCP and UDP
+$Protocols      = @("TCP", "UDP")        # Protocols to apply rules to, can be "TCP", "UDP", or both
+$Action         = "Allow"                # "Allow" to open ports, "Block" to close ports if not using the "Mode" parameter"
+$Profile        = "Any"                  # "Domain", "Private", "Public", or "Any" - which network profiles the rule applies to
 # ==========================================
 
-# --- Early Check: Removal Logic ---
-Write-Host "Checking for existing rules for '$RuleName'..." -ForegroundColor Cyan
+# --- Logging Helper Function ---
 
-$ExistingRules = Get-NetFirewallRule -DisplayName "$RuleName*" -ErrorAction SilentlyContinue
+# A helper function to write colored log messages with timestamps and levels (Info, Warning, Error, Debug).
+function Write-Log {
+    param (
+        [Parameter(Mandatory=$true)][string]$Message,
+        [ValidateSet("Info", "Warning", "Error", "Debug")][string]$Level = "Info"
+    )
 
-if ($ExistingRules) {
-    $ExistingRules | Remove-NetFirewallRule
-    Write-Host "Old rules removed successfully." -ForegroundColor Yellow
-} else {
-    Write-Host "No existing rules found to remove." -ForegroundColor Gray
+    $Color = switch ($Level) {
+        "Info"    { "Cyan" }
+        "Warning" { "Yellow" }
+        "Error"   { "Red" }
+        "Debug"   { "Gray" }
+        Default   { "White" }
+    }
+
+    if ($Level -eq "Debug" -and -not $DebugMode) { return }
+
+    $Timestamp = Get-Date -Format "HH:mm:ss"
+    Write-Host "[$Timestamp] [$($Level.ToUpper())] $Message" -ForegroundColor $Color
 }
 
-# --- The "Return" Logic ---
+# --- 1. Admin Elevation Check ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Log "Requesting Administrative privileges..." -Level "Warning"
+    try {
+        Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs -ErrorAction Stop
+        exit
+    } catch {
+        Write-Log "Failed to elevate to Admin. Firewall rules cannot be modified." -Level "Error"
+        if ($DebugMode) { Write-Log $_.Exception.Message -Level "Debug" }
+        pause; exit
+    }
+}
+
+# --- 2. Cleanup Logic ---
+Write-Log "Starting cleanup for '$RuleName'..."
+try {
+    $ExistingRules = Get-NetFirewallRule -DisplayName "$RuleName*" -ErrorAction Stop
+    if ($ExistingRules) {
+        $ExistingRules | Remove-NetFirewallRule -ErrorAction Stop
+        Write-Log "Successfully removed existing rules." -Level "Warning"
+    } else {
+        Write-Log "No matching rules found to remove." -Level "Debug"
+    }
+} catch {
+    Write-Log "An error occurred during cleanup check." -Level "Debug"
+    Write-Log $_.Exception.Message -Level "Debug"
+}
+
 if ($Mode -eq "RemoveOnly") {
-    Write-Host "Mode set to RemoveOnly. Script exiting now." -ForegroundColor White -BackgroundColor DarkBlue
-    return # This stops the script here
+    Write-Log "Operation 'RemoveOnly' complete. Exiting." -Level "Info"
+    return
 }
 
-# --- Rule Creation Logic ---
+# --- 3. Rule Creation ---
 foreach ($Proto in $Protocols) {
     $FullDisplayName = "$RuleName ($Proto)"
+    Write-Log "Attempting to create: $FullDisplayName..." -Level "Debug"
     
-    New-NetFirewallRule -DisplayName $FullDisplayName `
-                        -Direction Inbound `
-                        -Action $Action `
-                        -Protocol $Proto `
-                        -LocalPort $Ports `
-                        -Profile $Profile `
-                        -Enabled True
-    Write-Host "Created: $FullDisplayName" -ForegroundColor Green
+    try {
+        $Params = @{
+            DisplayName  = $FullDisplayName
+            Direction    = "Inbound"
+            Action       = $Action
+            Protocol     = $Proto
+            LocalPort    = $Ports
+            Profile      = $Profile
+            Enabled      = "True"
+            ErrorAction  = "Stop" # Forces the 'try/catch' to trigger on failure
+        }
+
+        New-NetFirewallRule @Params | Out-Null
+        Write-Log "Created: $FullDisplayName" -Level "Info"
+    } catch {
+        Write-Log "Failed to create rule: $FullDisplayName" -Level "Error"
+        Write-Log "Technical Details: $($_.Exception.Message)" -Level "Debug"
+    }
 }
+
+Write-Log "Firewall update complete." -Level "Info"
