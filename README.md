@@ -1,6 +1,12 @@
-# 🛡️ Windows Firewall Game Server Porter
+# 🛡️ Ronin Porter, the easiest port opener!
 
 A robust, automated PowerShell utility designed to manage inbound firewall rules for game servers. This script simplifies the process of opening and closing port ranges for both **TCP** and **UDP** protocols simultaneously, ensuring high-performance connectivity for servers like *Space Engineers*, *Minecraft*, *Valheim*, and more.
+
+---
+
+### The ultimate tool
+
+If you are looking for a way to open/close ports, as well as save a list of ports you've opened yourself, go the [https://github.com/PhonicSpider/Ronin-Portier](Ronin-Portier github) and take a look at that!!
 
 ## 🚀 Key Features
 
