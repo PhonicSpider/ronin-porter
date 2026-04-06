@@ -6,7 +6,7 @@ A robust, automated PowerShell utility designed to manage inbound firewall rules
 
 ### The ultimate tool
 
-If you are looking for a way to open/close ports, as well as save a list of ports you've opened yourself, go the [https://github.com/PhonicSpider/Ronin-Portier](Ronin-Portier github) and take a look at that!!
+If you are looking for a way to open/close ports, as well as save a list of ports you've opened yourself, go the [Ronin-Portier github](https://github.com/PhonicSpider/Ronin-Portier) and take a look at that!!
 
 ## 🚀 Key Features
 
